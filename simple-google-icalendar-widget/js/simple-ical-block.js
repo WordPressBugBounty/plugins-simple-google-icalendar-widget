@@ -4,7 +4,7 @@
  * Move styles to stylesheets - both edit and front-end.
  * and use attributes and editable fields
  * attributes as Inspectorcontrols (settings)
- * v2.3.0
+ * v2.7.0
  * 20230625 added quotes to the options of the Layout SelectControl,
  *  add parseInt to all integers in transform, added conversion dateformat_lgend and _tsend and anchorid = sibid
  * 20230420 added parseInt on line 147(now 148) to keep layout in block-editor
@@ -24,6 +24,8 @@
  * 2.4.4 initialization sibid also with direct assign in case setAttribute does not work (e.g. in Synced pattern 6.6) 
  *   removed references to ServerSideRender added deprecated 243; decoupled render and save changed attributes. 
  * 2.5.0 support for categories.
+ * 2.6.1  Started simplifying (bootstrap) collapse by toggles for adding javascript and trigger collapse by title.
+ * 2.7.0 Enable to add words of summary to categories for filtering. Add support for details/summary tag combination.
  */
 (function(blocks, i18n, element, blockEditor, components) {
 	const el = element.createElement;
@@ -48,13 +50,17 @@
 	const SelectControl = components.SelectControl;
 	const useEffect = element.useEffect;
 	const tagOpsh = [{ value: 'div', label: __('div', 'simple-google-icalendar-widget') },
+	{ value: 'b', label: __('b (attention, bold)', 'simple-google-icalendar-widget') },
+	{ value: 'div', label: __('div', 'simple-google-icalendar-widget') },
 	{ value: 'h1', label: __('h1 (header)', 'simple-google-icalendar-widget') },
 	{ value: 'h2', label: __('h2 (sub header)', 'simple-google-icalendar-widget') },
 	{ value: 'h3', label: __('h3 (sub header)', 'simple-google-icalendar-widget') },
 	{ value: 'h4', label: __('h4 (sub header)', 'simple-google-icalendar-widget') },
 	{ value: 'h5', label: __('h5 (sub header)', 'simple-google-icalendar-widget') },
 	{ value: 'h6', label: __('h6 (sub header)', 'simple-google-icalendar-widget') },
+	{ value: 'i', label: __('i (idiomatic, italic)', 'simple-google-icalendar-widget') },
 	{ value: 'span', label: __('span', 'simple-google-icalendar-widget') },
+	{ value: 'u', label: __('u (unarticulated, underline )', 'simple-google-icalendar-widget') }
 	];
 	const tagOps = [{ value: 'a', label: __('a (link)', 'simple-google-icalendar-widget') },
 	{ value: 'b', label: __('b (attention, bold)', 'simple-google-icalendar-widget') },
@@ -65,6 +71,7 @@
 	{ value: 'i', label: __('i (idiomatic, italic)', 'simple-google-icalendar-widget') },
 	{ value: 'span', label: __('span', 'simple-google-icalendar-widget') },
 	{ value: 'strong', label: __('strong', 'simple-google-icalendar-widget') },
+	{ value: 'summary', label: __('summary with details', 'simple-google-icalendar-widget') },
 	{ value: 'u', label: __('u (unarticulated, underline )', 'simple-google-icalendar-widget') }
 	];
 	
@@ -149,22 +156,24 @@
 				useBlockProps({
 					key: 'simple_ical',
 				})
-/*	rest placeholder for render in editor with setSibbAttrs 	*/		
 				,
-					el(
-				     'div',
-				     {
-		 				"id":(props.attributes.anchorId ? props.attributes.anchorId : props.attributes.sibid),
-						 "data-sib-id":props.attributes.sibid,
-						 "data-sib-utzui":props.attributes.rest_utzui,
-						 "data-sib-st":"0-start",
-					 }
-					 ,
-					 el('p',
-					    {},
-   						__('Processing', 'simple-google-icalendar-widget')
-   						)
+// render editor
+// rest placeholder for save sibAttributes and render in editor with simple-ical-block-fetch.js		
+				el(
+			     'div',
+			     {
+	 				"id":(props.attributes.anchorId ? props.attributes.anchorId : props.attributes.sibid),
+					 "data-sib-id":props.attributes.sibid,
+					 "data-sib-utzui":props.attributes.rest_utzui,
+					 "data-sib-st":"0-start",
+				 }
+				 ,
+				 el('p',
+				    {},
+					__('Processing', 'simple-google-icalendar-widget')
 					)
+				)
+// end render editor
 				,
 				el(InspectorControls,
 					{ key: 'setting' },
@@ -390,6 +399,15 @@
 						}
 					),
 					el(
+						ToggleControl,
+						{
+							label: __('Add summary to categories filter.', 'simple-google-icalendar-widget'),
+							checked: props.attributes.add_sum_catflt,
+							help: __('Add words from summary to categories for filtering.', 'simple-google-icalendar-widget'),
+							onChange: function(value) { props.setAttributes({ add_sum_catflt: value }); },
+						}
+					),
+					el(
 						SelectControl,
 						{
 							label: __('Tag for title:', 'simple-google-icalendar-widget'),
@@ -405,7 +423,7 @@
 							onChange: function(value) { props.setAttributes({ tag_title: value }); },
 							options: tagOpsh
 						}
-						),
+					),
 					el(
 						SelectControl,
 						{
@@ -451,14 +469,6 @@
 						}
 					),
 					el(
-						ToggleControl,
-						{
-							label: __('Allow safe html in description and summary.', 'simple-google-icalendar-widget'),
-							checked: props.attributes.allowhtml,
-							onChange: function(value) { props.setAttributes({ allowhtml: value }); },
-						}
-					),
-					el(
 						TextControl,
 						{
 							label: __('Closing HTML after available events:', 'simple-google-icalendar-widget'),
@@ -500,73 +510,171 @@
 							help: __('HTML anchor for this block. Type one or two words no spaces to create a unique web address for this block, called an "anchor". Then you can link directly to this section on your page. You can als use this ID to make parts of your extra css refer specific for this block', 'simple-google-icalendar-widget'),
 							onChange: function(value) { props.setAttributes({ anchorId: value }); },
 						}
+					),
+					el(
+						SelectControl,
+						{
+							label: __('Title as collapse toggle.', 'simple-google-icalendar-widget'),
+							value: props.attributes.title_collapse_toggle,
+							onChange: function(value) { props.setAttributes({ title_collapse_toggle: value }); },
+							options: [
+								{ value: '', label: __('No toggle', 'simple-google-icalendar-widget') },
+								{ value: 'collapse', label: __('Start collapsed', 'simple-google-icalendar-widget') },
+								{ value: 'collapse show', label: __('Start open', 'simple-google-icalendar-widget') },
+							]
+						}
+					),
+					el(
+						'p',
+						{},
+						__('Use plugin options form to add Bootstrap collapse code (js and css) when not provided by theme.', 'simple-google-icalendar-widget'),
+						el ('br',{}),
+						el(
+							'a',
+							{
+								"href": 'admin.php?page=simple_ical_options',
+								"target": '_blank',
+							},
+							__('Options form', 'simple-google-icalendar-widget')
+						)
 					)
 				)
 				);
 		},
 		save: function (props) {
-    return (el(
-				'div',
-				useBlockProps.save({
-					key: 'simple_ical',
-		 				"id":(props.attributes.anchorId ? props.attributes.anchorId : props.attributes.sibid),
-						 "data-sib-id":props.attributes.sibid,
-						 "data-sib-utzui":props.attributes.rest_utzui,
-						 "data-sib-st":"0-start",
-				}),
-				     {
-					 },
-					 el(
-						 props.attributes.tag_title,
-						 {
-							 "class":"widget-title block-title", 
-						     "data-sib-t":"true",
-						 },
-						 props.attributes.title
-						 ),
-					 el('p',
-					    {},
-   						__('Processing', 'simple-google-icalendar-widget')
-   						)
-    		));
+				    return (el(
+			'div',
+			useBlockProps.save({
+				key: 'simple_ical',
+	 			"id":(props.attributes.anchorId ? props.attributes.anchorId : props.attributes.sibid),
+				"data-sib-id":props.attributes.sibid,
+				"data-sib-utzui":props.attributes.rest_utzui,
+				"data-sib-st":"0-start",
+			}),
+			{},
+			el(
+				props.attributes.tag_title,
+				{
+				  "class":"widget-title block-title", 
+				  "data-sib-t":"true",
+				},
+				(('' < props.attributes.title_collapse_toggle )
+				 ? el( 'a',
+				 	 {
+					   "href": "#lg" + (props.attributes.anchorId ? props.attributes.anchorId : props.attributes.sibid),
+					   "data-toggle": "collapse",
+  					   "data-bs-toggle": "collapse",
+					   "role":"button",
+					   "aria-expanded":("collapse show" == props.attributes.title_collapse_toggle),
+					   "aria-controls":"collapseMod"
+				 	 },
+					 props.attributes.title
+			 	)
+				 : props.attributes.title
+			    )
+			 ),
+			el('p',
+			    {},
+				__('Processing', 'simple-google-icalendar-widget')
+			)
+    	  )
+		)
 		},
 		deprecated: [
-			{ // dep243 
+			{ // dep261 
 				"attributes": {
-					"wptype": { "type": "string", "default": "block" },
-					"sibid": { "type": "string" },
-					"title": { "type": "string", "default": "Events" },
-					"calendar_id": { "type": "string", "default": "" },
-					"event_count": { "type": "integer", "default": 10 },
-					"event_period": { "type": "integer", "default": 92 },
-					"layout": { "type": "integer", "default": 3 },
-					"cache_time": { "type": "integer", "default": 60 },
-					"dateformat_lg": { "type": "string", "default": "l jS \\of F" },
-					"dateformat_lgend": { "type": "string", "default": "" },
-					"tag_sum": { "type": "string", "enum": ["a", "b", "div", "h1", "h2", "h3", "h4", "h5", "h6", "i", "span", "strong", "u"], "default": "a" },
-					"tag_title": { "type": "string", "enum": ["a", "b", "div", "h1", "h2", "h3", "h4", "h5", "h6", "i", "span", "strong", "u"], "default": "h3" },
-					"dateformat_tsum": { "type": "string", "default": "G:i " },
-					"dateformat_tsend": { "type": "string", "default": "" },
-					"dateformat_tstart": { "type": "string", "default": "G:i" },
-					"dateformat_tend": { "type": "string", "default": " - G:i " },
-					"excerptlength": { "type": "string", "default": "" },
-					"suffix_lg_class": { "type": "string", "default": "" },
-					"suffix_lgi_class": { "type": "string", "default": " py-0" },
-					"suffix_lgia_class": { "type": "string", "default": "" },
-					"allowhtml": { "type": "boolean", "default": false },
-					"after_events": { "type": "string", "default": "" },
-					"no_events": { "type": "string", "default": "" },
-					"clear_cache_now": { "type": "boolean", "default": false },
-					"period_limits": { "type": "string", "enum": ["1", "2", "3", "4"], "default": "1" },
-					"rest_utzui": { "type": "string", "enum": ["", "1", "2"], "default": "" },
-					"anchorId": { "type": "string", "default": "" },
-					"blockid": { "type": "string" }
+				"wptype": { "type": "string", "default": "block" },
+				"sibid": { "type": "string" },
+				"title": { "type": "string", "default": "Events" },
+				"calendar_id": { "type": "string", "default": "" },
+				"event_count": { "type": "integer", "default": 10 },
+				"event_period": { "type": "integer", "default": 92 },
+				"layout": { "type": "integer", "default": 3 },
+				"cache_time": { "type": "integer", "default": 60 },
+				"dateformat_lg": { "type": "string", "default": "l jS \\of F" },
+				"dateformat_lgend": { "type": "string", "default": "" },
+				"tag_sum": { "type": "string", "enum": ["a", "b", "div", "h1", "h2", "h3", "h4", "h5", "h6", "i", "span", "strong", "u"], "default": "a" },
+				"tag_title": { "type": "string", "enum": ["a", "b", "div", "h1", "h2", "h3", "h4", "h5", "h6", "i", "span", "strong", "u"], "default": "h3" },
+				"dateformat_tsum": { "type": "string", "default": "G:i " },
+				"dateformat_tsend": { "type": "string", "default": "" },
+				"dateformat_tstart": { "type": "string", "default": "G:i" },
+				"dateformat_tend": { "type": "string", "default": " - G:i " },
+				"excerptlength": { "type": "string", "default": "" },
+				"suffix_lg_class": { "type": "string", "default": "" },
+				"suffix_lgi_class": { "type": "string", "default": " py-0" },
+				"suffix_lgia_class": { "type": "string", "default": "" },
+				"allowhtml": { "type": "boolean", "default": false },
+				"after_events": { "type": "string", "default": "" },
+				"no_events": { "type": "string", "default": "" },
+				"clear_cache_now": { "type": "boolean", "default": false },
+				"period_limits": { "type": "string", "enum": ["1", "2", "3", "4"], "default": "1" },
+				"rest_utzui": { "type": "string", "enum": ["", "1", "2"], "default": "" },
+				"anchorId": { "type": "string", "default": "" },
+				"title_collapse_toggle" : {	"type" : "string", 	"enum" : [ "", 	"collapse", "collapse show" ] },
+				"add_collapse_code" : {	"type" : "string"}
 				},
 				save: (props) => {
-					return (null
+				return (el(
+					'div',
+					useBlockProps.save({
+						key: 'simple_ical',
+			 				"id":(props.attributes.anchorId ? props.attributes.anchorId : props.attributes.sibid),
+							 "data-sib-id":props.attributes.sibid,
+							 "data-sib-utzui":props.attributes.rest_utzui,
+							 "data-sib-st":"0-start",
+					}),
+				    {},
+					el(
+					 props.attributes.tag_title,
+					 {
+					   "class":"widget-title block-title", 
+					   "data-sib-t":"true",
+					 },
+					   props.attributes.title
+					 ),
+					el('p',
+					 {},
+					  __('Processing', 'simple-google-icalendar-widget')
 					)
-				}
+				));
 			}
+		},
+		{ // dep243 
+			"attributes": {
+				"wptype": { "type": "string", "default": "block" },
+				"sibid": { "type": "string" },
+				"title": { "type": "string", "default": "Events" },
+				"calendar_id": { "type": "string", "default": "" },
+				"event_count": { "type": "integer", "default": 10 },
+				"event_period": { "type": "integer", "default": 92 },
+				"layout": { "type": "integer", "default": 3 },
+				"cache_time": { "type": "integer", "default": 60 },
+				"dateformat_lg": { "type": "string", "default": "l jS \\of F" },
+				"dateformat_lgend": { "type": "string", "default": "" },
+				"tag_sum": { "type": "string", "enum": ["a", "b", "div", "h1", "h2", "h3", "h4", "h5", "h6", "i", "span", "strong", "u"], "default": "a" },
+				"tag_title": { "type": "string", "enum": ["a", "b", "div", "h1", "h2", "h3", "h4", "h5", "h6", "i", "span", "strong", "u"], "default": "h3" },
+				"dateformat_tsum": { "type": "string", "default": "G:i " },
+				"dateformat_tsend": { "type": "string", "default": "" },
+				"dateformat_tstart": { "type": "string", "default": "G:i" },
+				"dateformat_tend": { "type": "string", "default": " - G:i " },
+				"excerptlength": { "type": "string", "default": "" },
+				"suffix_lg_class": { "type": "string", "default": "" },
+				"suffix_lgi_class": { "type": "string", "default": " py-0" },
+				"suffix_lgia_class": { "type": "string", "default": "" },
+				"allowhtml": { "type": "boolean", "default": false },
+				"after_events": { "type": "string", "default": "" },
+				"no_events": { "type": "string", "default": "" },
+				"clear_cache_now": { "type": "boolean", "default": false },
+				"period_limits": { "type": "string", "enum": ["1", "2", "3", "4"], "default": "1" },
+				"rest_utzui": { "type": "string", "enum": ["", "1", "2"], "default": "" },
+				"anchorId": { "type": "string", "default": "" },
+				"blockid": { "type": "string" }
+			},
+			save: (props) => {
+				return (null
+				)
+			}
+		}
 		]
 	});
 }(window.wp.blocks,

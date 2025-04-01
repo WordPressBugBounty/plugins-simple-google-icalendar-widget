@@ -12,6 +12,9 @@
  * Replace echo by $secho a.o. in widget(), to simplify escaping output by replacing multiple echoes by one.
  * known error: in wp 5.9.5 with elementor 3.14.1 aria-expanded and aria-controls are stripped bij wp_kses before wp 6.3.0 (see wp_kses.php) 
  *   issue is solved tested with wp 6.7.1 with elementor 3.26.5 . 
+ * 2.6.1  Started simplifying (bootstrap) collapse by toggles for adding javascript and trigger collapse by title.
+ *  Remove toggle to allow safe html in summary and description, save html is always allowed now. 
+ * 2.7.0 Enable to add words of summary to categories for filtering. Add support for details/summary tag combination.      
  */
 namespace WaasdorpSoekhan\WP\Plugin\SimpleGoogleIcalendarWidget;
 class SimpleicalWidget extends \WP_Widget
@@ -79,6 +82,10 @@ class SimpleicalWidget extends \WP_Widget
                     $l = explode('>', $args['before_title'], 2);
                     $args['before_title'] = implode(' data-sib-t="true" >', $l);
                 }
+                if (!empty($instance['title_collapse_toggle'])){
+                    $args['before_title'] .= '<a data-toggle="collapse" data-bs-toggle="collapse" href="#lg' .$instance['anchorId'] . '" role="button" aria-expanded="'.(('collapse' == $instance['title_collapse_toggle'])?'false':'true').'" aria-controls="collapseMod">';
+                    $args['after_title']  = '</a>' . $args['after_title'];
+                }
                 $title = apply_filters('widget_title', $instance['title']);
                 $secho .= $args['before_title']. $title. $args['after_title'];
             }
@@ -130,6 +137,7 @@ class SimpleicalWidget extends \WP_Widget
             $instance['categories_filter_op'] = ($new_instance['categories_filter_op'])??'';
             $instance['categories_filter'] = ($new_instance['categories_filter'])??'';
             $instance['categories_display'] = ($new_instance['categories_display'])??'';
+            $instance['add_sum_catflt'] = !empty($new_instance['add_sum_catflt']);
             
             $instance['event_count'] = $new_instance['event_count'];
             if(is_numeric($new_instance['event_count']) && 0 < $new_instance['event_count']) {
@@ -162,12 +170,13 @@ class SimpleicalWidget extends \WP_Widget
             $instance['suffix_lgia_class'] = substr(wp_strip_all_tags('a' . $new_instance['suffix_lgia_class']),1);
             $instance['after_events'] = ($new_instance['after_events']);
             $instance['no_events'] = ($new_instance['no_events']);
-            $instance['allowhtml'] = !empty($new_instance['allowhtml']);
             if (!empty($new_instance['blockid']) && empty($new_instance['sibid'])) {
                 $new_instance['sibid'] = $new_instance['blockid'];
             }
-            $instance['anchorId'] = wp_strip_all_tags($new_instance['anchorId']);
+            $instance['title_collapse_toggle'] = wp_strip_all_tags($new_instance['title_collapse_toggle'] ?? '' );
+            
             $instance['sibid'] = wp_strip_all_tags($new_instance['sibid']);
+            $instance['anchorId'] = wp_strip_all_tags($new_instance['anchorId'], 1) ?? $instance['sibid'];
             
             if (!empty($this->number && is_numeric($this->number))) {
                 $instance['postid'] = (string) $this->id;
@@ -296,7 +305,14 @@ class SimpleicalWidget extends \WP_Widget
           <input class="widefat" id="<?php echo esc_attr($this->get_field_id('categories_display')); ?>" name="<?php echo esc_attr($this->get_field_name('categories_display')); ?>" type="text" value="<?php echo esc_attr($instance['categories_display']); ?>" />
 		<label style="font-size:12px; color:#7f7f7f;"><?php esc_attr_e('Empty no display. Else display categories above event with this separator.', 'simple-google-icalendar-widget'); ?></label>
         </p>
+        
         <p>
+          <input class="checkbox" id="<?php echo esc_attr($this->get_field_id('add_sum_catflt')); ?>" name="<?php echo esc_attr($this->get_field_name('add_sum_catflt')); ?>" type="checkbox" value="1" <?php checked( '1', $instance['add_sum_catflt'] ); ?> />
+          <label for="<?php echo esc_attr($this->get_field_id('add_sum_catflt')); ?>"><?php esc_attr_e('Add summary to categories filter.', 'simple-google-icalendar-widget'); ?></label> 
+          <!-- Add words from summary to categories for filtering  -->
+        </p>
+
+		<p>
           <label for="<?php echo esc_attr($this->get_field_id('tag_sum')); ?>"><?php esc_attr_e('Tag for summary:', 'simple-google-icalendar-widget'); ?></label> 
           <select class="widefat" id="<?php echo esc_attr($this->get_field_id('tag_sum')); ?>" name="<?php echo esc_attr($this->get_field_name('tag_sum')); ?>" >
             <option value="a"<?php echo ('a'==esc_attr($instance['tag_sum']))?'selected':''; ?>><?php esc_attr_e('a (link)', 'simple-google-icalendar-widget'); ?></option>
@@ -308,6 +324,7 @@ class SimpleicalWidget extends \WP_Widget
   			<option value="i"<?php echo ('i'==esc_attr($instance['tag_sum']))?'selected':''; ?>><?php esc_attr_e('i (idiomatic, italic)', 'simple-google-icalendar-widget'); ?></option>
   			<option value="span"<?php echo ('span'==esc_attr($instance['tag_sum']))?'selected':''; ?>><?php esc_attr_e('span', 'simple-google-icalendar-widget'); ?></option>
   			<option value="strong"<?php echo ('strong'==esc_attr($instance['tag_sum']))?'selected':''; ?>><?php esc_attr_e('strong', 'simple-google-icalendar-widget'); ?></option>
+  			<option value="summary"<?php echo ('summary'==esc_attr($instance['tag_sum']))?'selected':''; ?>><?php esc_attr_e('summary with details', 'simple-google-icalendar-widget'); ?></option>
   			<option value="u"<?php echo ('u'==esc_attr($instance['tag_sum']))?'selected':''; ?>><?php esc_attr_e('u (unarticulated, underline )', 'simple-google-icalendar-widget'); ?></option>
   		 </select>	
         </p>
@@ -324,10 +341,6 @@ class SimpleicalWidget extends \WP_Widget
           <input class="widefat" id="<?php echo esc_attr($this->get_field_id('suffix_lgia_class')); ?>" name="<?php echo esc_attr($this->get_field_name('suffix_lgia_class')); ?>" type="text" value="<?php echo esc_attr($instance['suffix_lgia_class']); ?>" />
         </p>
         <p>
-          <input class="checkbox" id="<?php echo esc_attr($this->get_field_id('allowhtml')); ?>" name="<?php echo esc_attr($this->get_field_name('allowhtml')); ?>" type="checkbox" value="1" <?php checked( '1', $instance['allowhtml'] ); ?> />
-          <label for="<?php echo esc_attr($this->get_field_id('allowhtml')); ?>"><?php esc_attr_e('Allow safe html in description and summary.', 'simple-google-icalendar-widget'); ?></label> 
-        </p>
-        <p>
           <label for="<?php echo esc_attr($this->get_field_id('after_events')); ?>"><?php esc_attr_e('Closing HTML after available events:', 'simple-google-icalendar-widget'); ?></label> 
           <input class="widefat" id="<?php echo esc_attr($this->get_field_id('after_events')); ?>" name="<?php echo esc_attr($this->get_field_name('after_events')); ?>" type="text" value="<?php echo esc_attr($instance['after_events']); ?>" />
         </p>
@@ -338,6 +351,23 @@ class SimpleicalWidget extends \WP_Widget
         <p>
           <label for="<?php echo esc_attr($this->get_field_id('anchorId')); ?>"><?php esc_attr_e('HTML anchor:', 'simple-google-icalendar-widget'); ?></label> 
           <input class="widefat" id="<?php echo esc_attr($this->get_field_id('anchorId')); ?>" name="<?php echo esc_attr($this->get_field_name('anchorId')); ?>" type="text" value="<?php echo esc_attr($instance['anchorId']); ?>" />
+        </p>
+        <p>
+          <label for="<?php echo esc_attr($this->get_field_id('title_collapse_toggle')); ?>"><?php esc_attr_e('Title as collapse toggle.', 'simple-google-icalendar-widget'); ?></label> 
+          <select class="widefat" id="<?php echo esc_attr($this->get_field_id('title_collapse_toggle')); ?>" name="<?php echo esc_attr($this->get_field_name('title_collapse_toggle')); ?>" >
+            <option value=""<?php echo (''==esc_attr($instance['title_collapse_toggle']))?'selected':''; ?>><?php esc_attr_e('No toggle', 'simple-google-icalendar-widget'); ?></option>
+  			<option value="collapse"<?php echo ('collapse'==esc_attr($instance['title_collapse_toggle']))?'selected':''; ?>><?php esc_attr_e('Start collapsed', 'simple-google-icalendar-widget'); ?></option>
+  			<option value="collapse show"<?php echo ('collapse show'==esc_attr($instance['title_collapse_toggle']))?'selected':''; ?>><?php esc_attr_e('Start open', 'simple-google-icalendar-widget'); ?></option>
+  		 </select>	
+        </p>
+        <p>
+          <label><?php esc_attr_e('Use plugin options form to add Bootstrap collapse code (js and css) when not provided by theme.', 'simple-google-icalendar-widget'); ?>
+          <br> 
+            <?php echo '<a href="' . esc_url(admin_url('admin.php?page=simple_ical_options')) . '" target="_blank">' ; 
+                esc_attr_e('Options form', 'simple-google-icalendar-widget'); 
+                echo '</a>';
+                ?>
+           </label>
         </p>
         <p>
           <label for="<?php echo esc_attr($this->get_field_id('sibid')); ?>"><?php esc_attr_e('Sib ID:', 'simple-google-icalendar-widget'); ?></label> 

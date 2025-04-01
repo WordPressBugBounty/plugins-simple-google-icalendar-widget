@@ -9,7 +9,7 @@
  * @link https://github.com/bramwaas/wordpress-plugin-wsa-simple-google-calendar-widget
  * @license http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
  * Gutenberg Block functions since v2.1.2 also used for widget.
- * Version: 2.6.0
+ * Version: 2.7.0
  * 2.2.0 20240106 changed text domain to simple-google-icalendar-widget
  * 2.2.1 20240123 don't display description line when excerpt-length = 0
  * 2.3.0 remove definition of attributes, leave it to block.json
@@ -20,15 +20,18 @@
  * 2.4.0 str_replace('Etc/GMT ','Etc/GMT+' for some UTC-... timezonesettings.
  * 2.4.1 resolved with wptype 'rest_ph_w' warning on wrapper_attributes when wptype 'rest_ph' and started from widget 
  * 2.4.3 replace render_callback in server side register_block_type by render in block.json (v3 plus ( is_wp_version_compatible( '6.3' ) )) 
- *       add  "data-sib-utzui":props.attributes.rest_utzui to rest placeholder tag; use tag_title when not placeholder for widget
+   add  "data-sib-utzui":props.attributes.rest_utzui to rest placeholder tag; use tag_title when not placeholder for widget
  * 2.4.4 improve compare equallity in update_rest_attrs by removing attributes that are added during save process or depend on saving environment.
  * 2.5.0 Add filter and display support for categories.
  * 2.6.0 improve security by following Plugin Check recommendations; Moved functions common with Joomla to top. 
- * rename SimpleicalBlock to SimpleicalHelper and register widget in this class. 
- * Replace echo by $secho in &$secho param a.o. in display_block, to simplify escaping output by replacing multiple echoes by one. 
- * known error: in wp 5.9.5 with elementor 3.14.1 aria-expanded and aria-controls are stripped bij wp_kses before wp 6.3.0 (see wp_kses.php) 
- *   issue is solved tested with wp 6.7.1 with elementor 3.26.5 . 
-
+   rename SimpleicalBlock to SimpleicalHelper and register widget in this class. 
+   Replace echo by $secho in &$secho param a.o. in display_block, to simplify escaping output by replacing multiple echoes by one. 
+   known error: in wp 5.9.5 with elementor 3.14.1 aria-expanded and aria-controls are stripped bij wp_kses before wp 6.3.0 (see wp_kses.php) 
+    issue is solved tested with wp 6.7.1 with elementor 3.26.5 . 
+ * 2.6.1  Started simplifying (bootstrap) collapse by toggles for adding javascript and trigger collapse by title.
+   Remove toggle to allow safe html in summary and description, save html is always allowed now.
+   Sameday as logical and calculated with localtime instead of gmdate. Add titlenode to REST output. Removed ev_class from li head.
+ * 2.7.0 Added cast $class to string in sanitize_html_clss, defaults for new collapse fields. Add support for details/summary tag combination.         
  */
 namespace WaasdorpSoekhan\WP\Plugin\SimpleGoogleIcalendarWidget;
 
@@ -54,6 +57,7 @@ class SimpleicalHelper
         'i',
         'span',
         'strong',
+        'summary',
         'u'
     ];
 
@@ -72,7 +76,8 @@ class SimpleicalHelper
         'cache_time' => 60,
         'categories_filter_op' => '',
         'categories_filter' => '',
-        'categories_display' => '',      
+        'categories_display' => '',
+        'add_sum_catflt' => false,
         'layout' => 3,
         'dateformat_lg' => 'l jS \of F',
         'dateformat_lgend' => '',
@@ -86,7 +91,7 @@ class SimpleicalHelper
         'suffix_lg_class' => '',
         'suffix_lgi_class' => ' py-0',
         'suffix_lgia_class' => '',
-        'allowhtml' => false,
+        'allowhtml' => true,
         'after_events' => '',
         'no_events' => '',
         'clear_cache_now' => false,
@@ -94,6 +99,8 @@ class SimpleicalHelper
         'rest_utzui' => '',
         'className' => '',
         'anchorId' => '',
+        'title_collapse_toggle' => '',
+        'add_collapse_code' => false,
         'before_widget' => '<div id="%1$s" %2$s>',
         'after_widget'  => '</div>'
     ];
@@ -163,12 +170,13 @@ class SimpleicalHelper
                 $secho .= '<!-- ' . $msg . ' -->';
             }
             if (! empty($data) && is_array($data)) {
-                $secho .= '<ul class="list-group' . $attributes['suffix_lg_class'] . ' simple-ical-widget" > ';
+                $secho .= '<ul id="lg' .$attributes['anchorId'] .'" class="list-group' . $attributes['suffix_lg_class'] . ' simple-ical-widget 270 '. $attributes['title_collapse_toggle'] . '" > ';
                 $curdate = '';
                 foreach ($data as $e) {
                     $idlist = explode("@", $e->uid,2);
                     $itemid = $attributes['sibid'] . '_' . strval(++ $sn) . '_' . $idlist[0];
                     $evdate = wp_date($dflg, $e->start, $attributes['tz_ui']);
+                    $sameday = (wp_date('yz', $e->start, $attributes['tz_ui']) === wp_date('yz', $e->end, $attributes['tz_ui']));
                     $ev_class = ((! empty($e->cal_class)) ? ' ' . sanitize_html_class($e->cal_class) : '');
                     $cat_list = '';
                     if (!empty($e->categories)) {
@@ -179,12 +187,7 @@ class SimpleicalHelper
                                 . '</small></div>';
                         }
                     }
-                    if (! $attributes['allowhtml']) {
-                        if (!empty($e->summary)) $e->summary = htmlspecialchars($e->summary);
-                        if (!empty($e->description)) $e->description = htmlspecialchars($e->description);
-                        if (!empty($e->location)) $e->location = htmlspecialchars($e->location);
-                    }
-                    if (gmdate('yz', $e->start) != gmdate('yz', $e->end)) {
+                    if (! $sameday ) {
                         $evdate = str_replace(array(
                             "</div><div>",
                             "</h4><h4>",
@@ -197,12 +200,17 @@ class SimpleicalHelper
                         if ($curdate != '') {
                             $secho .= '</ul></li>';
                         }
-                        $secho .= '<li class="list-group-item' . $sflgi . $ev_class . ' head">' . '<span class="ical-date">' . ucfirst($evdate) . '</span><ul class="list-group' . $attributes['suffix_lg_class'] . '">';
+                        $secho .= '<li class="list-group-item' . $sflgi . ' head">' . '<span class="ical-date">' . ucfirst($evdate) . '</span><ul class="list-group' . $attributes['suffix_lg_class'] . '">';
                     }
                     $secho .= '<li class="list-group-item' . $sflgi . $ev_class . '">';
                     if ($layout == 3 && $curdate != $evdate) {
                         $secho .= '<span class="ical-date">' . ucfirst($evdate) . '</span>' . (('a' == $attributes['tag_sum']) ? '<br>' : '');
                     }
+ 
+                    if ('summary' == $attributes['tag_sum']) {
+                        $secho .= '<details class="ical_details' . $sflgia . '" id="'. $itemid. '">';
+                    }
+                    
                     $secho .=  '<' . $attributes['tag_sum'] . ' class="ical_summary' . $sflgia . (('a' == $attributes['tag_sum']) ? '" data-toggle="collapse" data-bs-toggle="collapse" href="#' . $itemid . '" aria-expanded="false" aria-controls="' . $itemid . '">' : '">');
                     if ($layout != 2) {
                         $secho .= $evdtsum;
@@ -210,11 +218,15 @@ class SimpleicalHelper
                     if (! empty($e->summary)) {
                         $secho .= str_replace("\n", '<br>', $e->summary);
                     }
-                    $secho .= '</' . $attributes['tag_sum'] . '>';
+                    $secho .= '</' . $attributes['tag_sum'] . '>' . $cat_list;
                     if ($layout == 2) {
                         $secho .= '<span>'. $evdate . $evdtsum . '</span>';
                     }
-                    $secho .= $cat_list . '<div class="ical_details' . $sflgia . (('a' == $attributes['tag_sum']) ? ' collapse' : '') . '" id="'. $itemid. '">';
+
+                    if ('summary' != $attributes['tag_sum']) {
+                        $secho .= '<div class="ical_details' . $sflgia . (('a' == $attributes['tag_sum']) ? ' collapse' : '') . '" id="'. $itemid. '">';
+                    }
+
                     if (! empty($e->description) && trim($e->description) > '' && $excerptlength !== 0) {
                         if ($excerptlength !== '' && strlen($e->description) > $excerptlength) {
                             $e->description = substr($e->description, 0, $excerptlength + 1);
@@ -231,7 +243,7 @@ class SimpleicalHelper
                         $e->description = str_replace("\n", '<br>', $e->description);
                         $secho .= '<span class="dsc">'. $e->description. ((strrpos($e->description, '<br>') === (strlen($e->description) - 4)) ? '' : '<br>'). '</span>';
                     }
-                    if ($e->startisdate === false && gmdate('yz', $e->start) === gmdate('yz', $e->end)) {
+                    if ($e->startisdate === false && $sameday) {
                         $secho .= '<span class="time">'. wp_date($dftstart, $e->start, $attributes['tz_ui']). '</span><span class="time">'. wp_date($dftend, $e->end, $attributes['tz_ui']). '</span> ';
                     } else {
                         $secho .= '';
@@ -239,7 +251,11 @@ class SimpleicalHelper
                     if (! empty($e->location)) {
                         $secho .= '<span class="location">'. str_replace("\n", '<br>', $e->location). '</span>';
                     }
-                    $secho .= '</div></li>';
+                    if ('summary' == $attributes['tag_sum']) {
+                        $secho .= '</details></li>';
+                    } else {
+                        $secho .= '</div></li>';
+                    }
                     $curdate = $evdate;
                 }
                 if ($layout < 2) {
@@ -262,7 +278,7 @@ class SimpleicalHelper
      */
     static function sanitize_html_clss( $class, $fallback = '' ) {
         // Strip out any %-encoded octets.
-        $sanitized = preg_replace( '|%[a-fA-F0-9][a-fA-F0-9]|', '', $class );
+        $sanitized = preg_replace( '|%[a-fA-F0-9][a-fA-F0-9]|', '', (string) $class );
         
         // Limit to A-Z, ' ', a-z, 0-9, '_', '-'.
         $sanitized = preg_replace( '/[^A-Z a-z0-9_-]/', '', $sanitized );
@@ -295,18 +311,23 @@ class SimpleicalHelper
         if (empty($block_attributes['tzid_ui'])) {
             $block_attributes['tzid_ui'] = wp_timezone_string();
         }
-        ;
         if (empty($block_attributes['sibid']) && ! empty($block_attributes['blockid'])) {
             $block_attributes['sibid'] = $block_attributes['blockid'];
         }
-        ;
         if  (empty($block_attributes['tag_title']))  $block_attributes['tag_title'] = 'h3';
-        $titlenode = '<' . $block_attributes['tag_title'] .' class="widget-title block-title" data-sib-t="true">'
+        if (!empty($block_attributes['title_collapse_toggle'])){
+            $block_attributes['title'] = ('<a data-toggle="collapse" data-bs-toggle="collapse" href="#lg' .$block_attributes['anchorId'] . '" role="button" aria-expanded="'.(('collapse' == $block_attributes['title_collapse_toggle'])?'false':'true').'" aria-controls="collapseMod">' . $block_attributes['title'] . '</a>');
+        }
+        $titlenode = '<' . $block_attributes['tag_title'] 
+            .' class="widget-title block-title" data-sib-t="true">'
             . $block_attributes['title']
             . '</' . $block_attributes['tag_title'] . '>';
             
             $secho = '';
+//            $secho .= PHP_EOL . '<!-- ' . PHP_EOL . print_r($block_attributes, true) . PHP_EOL . '-->' . PHP_EOL;
             switch ($block_attributes['wptype']) {
+                case 'REST_t':
+                    $secho .= $titlenode;
                 case 'REST':
                     // Block displayed via REST
                     self::display_block($block_attributes, $secho);
@@ -399,7 +420,6 @@ class SimpleicalHelper
         }
         return $html;
     }
-    
     /**
      * Block init register block with help of block.json v3 plus
      *
@@ -432,6 +452,7 @@ class SimpleicalHelper
             'categories_filter_op' => ['type' => 'string', 'enum' => ['','ANY','ALL','NOTANY','NOTALL'], 'default' => ''],
             'categories_filter' => ['type' => 'string', 'default' => ''],
             'categories_display' => ['type' => 'string', 'default' => ''],
+            'add_sum_catflt' => ['type' => 'boolean', 'default' => false],    
             'layout' => ['type' => 'integer', 'default' => 3],
             'cache_time' => ['type' => 'integer', 'default' => 60],
             'dateformat_lg' => ['type' => 'string', 'default' => 'l jS \of F'],
@@ -446,13 +467,14 @@ class SimpleicalHelper
             'suffix_lg_class' => ['type' => 'string', 'default' => ''],
             'suffix_lgi_class' => ['type' => 'string', 'default' => ' py-0'],
             'suffix_lgia_class' => ['type' => 'string', 'default' => ''],
-            'allowhtml' => ['type' => 'boolean', 'default' => false],
             'after_events' => ['type' => 'string', 'default' => ''],
             'no_events' => ['type' => 'string', 'default' => ''],
             'period_limits' => ['type' => 'string', 'enum' => ['1', '2', '3', '4'], 'default' => '1'],
             'rest_utzui' => ['type' => 'string', 'enum' => ['', '1', '2'], 'default' => ''],
             'clear_cache_now' => ['type' => 'boolean', 'default' => false],
             'anchorId' => ['type' => 'string', 'default' => ''],
+            'title_collapse_toggle' => ['type' => 'string', 'enum' => [ '', 'collapse', 'collapse show']],
+            'add_collapse_code' => ['type' => 'string', 'default' => ''],
             'blockid' => ['type' => 'string'],
             ],
             'render_callback' => array(
@@ -471,7 +493,7 @@ class SimpleicalHelper
      * @param array $content
      *            as saved in post by save in ...block.js
      * @param object $block
-     *            the bolck that is rendered
+     *            the block that is rendered
      * @return string escaped HTML to render for the block (frontend)
      */
     static function render_blockv2($block_attributes, $content = null, $block = null)
