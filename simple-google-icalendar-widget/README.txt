@@ -6,7 +6,7 @@ Tags: Google Calendar, iCal, Events, Block, Calendar
 Requires at least: 5.9   
 Tested up to: 7.1  
 Requires PHP: 7.4   
-Stable tag: 3.2.0
+Stable tag: 3.2.1
 License: GPLv2 or later   
 License URI: http://www.gnu.org/licenses/gpl-2.0.html   
     
@@ -260,6 +260,7 @@ This project is licensed under the [GNU GPL](http://www.gnu.org/licenses/old-lic
 * require WP 5.9 so that I can remove older code.         
 
 == Changelog ==
+* 3.2.1 issue GLOB_BRACE not present on musl #59 by surkum on github, GLOB_BRACE not present in system not based on glibc, Surkum's suggestion adopted. 
 * 3.2.0 Working with overridable templates, similar to Joomla module. Requires WP5.9 (was 5.3)
 * 3.1.4 after issue 'No Events displayed' by @alinaseibt remove single htmlspecialchars validation that broke url with & in it in legacy widget.
 Added more Loggings in IcsParser e.g. also if found file is no ical calendar  
